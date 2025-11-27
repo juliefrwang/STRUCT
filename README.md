@@ -1,6 +1,6 @@
 # STRUCT (previously named as SPLASH-structure)
 
-STRUCT is a statistical tool that predicts RNA secondary structures without the need for multiple sequence alignment (MSA).
+This repository contains the official implementation accompanying our manuscript: STRUCT: a statistical approach to identify RNA secondary structures from raw sequencing data, bypassing multiple sequence alignment. Read the paper on [bioRxiv](https://www.biorxiv.org/content/10.1101/2024.10.03.616574v2).
 
 ## Setting up the Python Environment
 
