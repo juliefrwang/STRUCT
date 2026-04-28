@@ -1,11 +1,14 @@
 """
-This script is the first step of the pipeline. It takes in a dataframe with significant 
+This script is the first step of the pipeline. It takes in a dataframe with significant
 anchors from SPLASH and returns a dataframe that contains hairpin structure information
 and target weight information.
 """
 import pandas as pd
 import numpy as np
 from pandarallel import pandarallel
+
+from splash_structure_py.src.non_wcf import V_EXT, V_WOBBLE
+
 
 def rc(seq):
     """
@@ -41,10 +44,80 @@ def find_stem_ind(target, stem_L=5):
             if loc > -1:
                 stem_start_idx = j
                 stem_end_idx = i + j-1
-                rc_start_idx = loc + i + j 
+                rc_start_idx = loc + i + j
                 rc_end_idx = loc + i + j + i-1
                 return stem_start_idx, stem_end_idx, rc_start_idx, rc_end_idx, stem_end_idx-stem_start_idx+1
     return [0,0,0,0,0]
+
+
+def find_stem_ind_wobble(target, stem_L=5):
+    """Wobble-aware stem detection.
+
+    Searches for a stem-loop in ``target`` where each pair lies in
+    ``V_EXT`` (Watson-Crick-Franklin or G·U wobble). Replaces the strict
+    reverse-complement substring match in ``find_stem_ind`` with a
+    position-by-position membership check.
+
+    Selection order (per Decision 1 in IMPLEMENTATION_PLAN_nonwcf.md):
+
+    1. Fewest wobble positions (WCF-only beats any wobble-using stem).
+    2. Longest stem.
+    3. Leftmost left-stem start.
+    4. Leftmost right-stem start.
+
+    No cap on the number of wobble positions.
+
+    Returns
+    -------
+    list or tuple
+        ``(stem_start_idx, stem_end_idx, rc_start_idx, rc_end_idx, stemL)``
+        if a stem of length >= ``stem_L`` is found, else ``[0, 0, 0, 0, 0]``.
+        Index conventions match ``find_stem_ind``.
+
+    Notes
+    -----
+    Backward compatibility: when ``target`` admits a strict-WCF stem,
+    ``find_stem_ind_wobble`` returns the same indices as ``find_stem_ind``
+    (the WCF stem has 0 wobble and dominates the tie-breaking).
+    """
+    n = len(target)
+    max_size = n // 2
+    if max_size < stem_L:
+        return [0, 0, 0, 0, 0]
+
+    best = None  # (n_wobble, -length, left_start, right_start, length)
+
+    for i in range(stem_L, max_size + 1):
+        # i = candidate stem length
+        for j in range(n - 2 * i + 1):
+            # j = left stem start
+            for k in range(j + i, n - i + 1):
+                # k = right stem start; pair p uses left j+p, right k+(i-1-p)
+                n_wobble = 0
+                ok = True
+                for p in range(i):
+                    bL = target[j + p]
+                    bR = target[k + (i - 1 - p)]
+                    pair = (bL, bR)
+                    if pair not in V_EXT:
+                        ok = False
+                        break
+                    if pair in V_WOBBLE:
+                        n_wobble += 1
+                if ok:
+                    candidate = (n_wobble, -i, j, k, i)
+                    if best is None or candidate < best:
+                        best = candidate
+
+    if best is None:
+        return [0, 0, 0, 0, 0]
+
+    n_wobble, neg_i, j, k, i = best
+    stem_start_idx = j
+    stem_end_idx = j + i - 1
+    rc_start_idx = k
+    rc_end_idx = k + i - 1
+    return stem_start_idx, stem_end_idx, rc_start_idx, rc_end_idx, i
 
 
 def process_row(row):
