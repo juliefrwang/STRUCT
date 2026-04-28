@@ -5,6 +5,8 @@ import itertools
 import sys
 from pandarallel import pandarallel
 
+from splash_structure_py.src.non_wcf import pi_table
+
 ### 1. Target p computation ###
 def target_p1_closed_form(k, v, L, c):
     """
@@ -26,8 +28,8 @@ def target_p1_closed_form(k, v, L, c):
                     continue
                 sum_m = 0
                 for m in range(0, min(l-g+1, h-l-g+1)):
-                    sum_m += comb(l-g, m) * 2**m * comb(L-l, h-l-g-m) * 3**(h-l-g-m) 
-                p_g += comb(L, l) * 3**l * comb(l, g)* sum_m / comb(2*L, h) / 3**h 
+                    sum_m += comb(l-g, m) * 2**m * comb(L-l, h-l-g-m) * 3**(h-l-g-m)
+                p_g += comb(L, l) * 3**l * comb(l, g)* sum_m / comb(2*L, h) / 3**h
             p_c_h += p_g
         p_c += p_h * p_c_h
     return p_c
@@ -36,7 +38,7 @@ def target_p(k, stemL, totaMut, stemMut, compMut):
     """
     Return taregt p-value:
     p_1: exact p-val found using lookup table `dt` or approximate p for longer stem
-    p_2: no stem mutations 
+    p_2: no stem mutations
     combine multiple p: (stemMut > 0) * p_1 + (stemMut == 0) * p_2
     """
 
@@ -44,6 +46,122 @@ def target_p(k, stemL, totaMut, stemMut, compMut):
     p_2 = comb(k - 2 * stemL, totaMut) / comb(k, totaMut)
     p = (stemMut > 0) * p_1 + (stemMut == 0) * p_2
     return p
+
+### 1b. Extended (SVP) target p computation — non-WCF wobble extension ###
+
+def target_p_svp(k, v, L, e, b):
+    """
+    SVP (Stem-Variation-Presence) target p-value via the dynamic-programming
+    algorithm in nonWCF_derivation.tex Section 5.4.
+
+    Parameters
+    ----------
+    k : int
+        Target length.
+    v : int
+        Total Hamming distance from base target.
+    L : int
+        Stem length (number of stem pairs).
+    e : int
+        Observed structure-supporting count (E = sum of E_p over all pairs).
+    b : sequence of (str, str)
+        Stem composition: list of (b_L^p, b_R^p) tuples, length L.
+
+    Returns
+    -------
+    float
+        Pr(E >= e | v, k, L, b) under the null model. Computed by
+        marginalising the conditional Pr(E >= e | H = h, b) over the
+        hypergeometric distribution of stem mismatches H.
+    """
+    if e <= 0:
+        return 1.0
+    if e > L:
+        return 0.0
+    if len(b) != L:
+        raise ValueError(f"len(b) = {len(b)} but L = {L}")
+
+    # Per-pair Bernoulli parameters pi_p^(j) for j in {1, 2}.
+    pis = [pi_table(b_L, b_R) for (b_L, b_R) in b]
+
+    total = 0.0
+    h_max = min(v, 2 * L)
+    for h in range(h_max + 1):
+        # Pr(H = h | v, k, L) — hypergeometric. comb returns 0 when args invalid.
+        pr_h = comb(2 * L, h) * comb(k - 2 * L, v - h) / comb(k, v)
+        if pr_h == 0:
+            continue
+
+        # Inner DP: g[s][m] over current p-slice.
+        prev = [[0.0] * (L + 1) for _ in range(2 * L + 1)]
+        prev[0][0] = 1.0
+
+        for p in range(1, L + 1):
+            curr = [[0.0] * (L + 1) for _ in range(2 * L + 1)]
+            pi1 = pis[p - 1][1]
+            pi2 = pis[p - 1][2]
+            s_upper = min(2 * p, h)
+            for s in range(s_upper + 1):
+                m_upper = min(p, s + (p - 0))  # m <= p anyway
+                for m in range(min(p, L) + 1):
+                    val = 0.0
+                    # j_p = 0: weight C(2,0) = 1, E_p = 0 deterministically
+                    val += prev[s][m]
+                    # j_p = 1: weight C(2,1) = 2; E_p = 1 with prob pi1
+                    if s - 1 >= 0:
+                        if m - 1 >= 0:
+                            val += 2.0 * pi1 * prev[s - 1][m - 1]
+                        val += 2.0 * (1.0 - pi1) * prev[s - 1][m]
+                    # j_p = 2: weight C(2,2) = 1; E_p = 1 with prob pi2
+                    if s - 2 >= 0:
+                        if m - 1 >= 0:
+                            val += pi2 * prev[s - 2][m - 1]
+                        val += (1.0 - pi2) * prev[s - 2][m]
+                    curr[s][m] = val
+            prev = curr
+
+        # Pr(E >= e | H = h, b) = sum_{m=e}^L g_L[h][m] / C(2L, h)
+        denom = comb(2 * L, h)
+        if denom == 0:
+            continue
+        inner = sum(prev[h][m] for m in range(e, L + 1)) / denom
+        total += pr_h * inner
+
+    return total
+
+
+def target_p_ext(k, stemL, totaMut, stemMut, e, b):
+    """
+    Extended target p-value combining SVE (s = 0) and SVP (s > 0)
+    via an indicator on stemMut, per Section 6 of nonWCF_derivation.tex.
+
+    SVE branch is the (corrected) hypergeometric C(k-2L, v) / C(k, v).
+    SVP branch calls ``target_p_svp``.
+
+    Parameters
+    ----------
+    k : int
+        Target length.
+    stemL : int
+        Stem length L.
+    totaMut : int
+        Total Hamming distance v.
+    stemMut : int
+        Number of mismatches falling in stem positions (drives the indicator).
+    e : int
+        Observed structure-supporting count E (only used when stemMut > 0).
+    b : sequence of (str, str)
+        Stem composition; length stemL.
+
+    Returns
+    -------
+    float
+        Indicator-combined extended target p-value.
+    """
+    if stemMut == 0:
+        # SVE: Pr(all v mismatches outside stem)
+        return comb(k - 2 * stemL, totaMut) / comb(k, totaMut)
+    return target_p_svp(k, totaMut, stemL, e, b)
 
 ### 2. Anchor p computation ###
 def target_p_outcome(k, stemL, totaMut):
