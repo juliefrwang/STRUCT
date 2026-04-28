@@ -163,6 +163,53 @@ def target_p_ext(k, stemL, totaMut, stemMut, e, b):
         return comb(k - 2 * stemL, totaMut) / comb(k, totaMut)
     return target_p_svp(k, totaMut, stemL, e, b)
 
+
+def target_p_outcome_ext(k, stemL, totaMut, b):
+    """SVP analogue of ``target_p_outcome``.
+
+    Enumerates the distinct values target_p_ext can take given (k, stemL,
+    totaMut, b), used downstream by the anchor-p convolution. Iterates
+    over (stemMut, e) instead of (stemMut, compMut).
+    """
+    all_possible_outcome = set()
+    stemMut_start = max(0, totaMut - (k - 2 * stemL))
+    for stemMut in range(stemMut_start, min(totaMut, 2 * stemL) + 1):
+        if stemMut == 0:
+            # SVE branch: e is irrelevant
+            all_possible_outcome.add(target_p_ext(k, stemL, totaMut, 0, 0, b))
+        else:
+            for e in range(stemL + 1):
+                all_possible_outcome.add(
+                    target_p_ext(k, stemL, totaMut, stemMut, e, b)
+                )
+    return sorted(all_possible_outcome)
+
+
+def prep_for_conv_ext(num_target, wgt_all, k, stemL_list, totaMut_list, b_list):
+    """SVP analogue of ``prep_for_conv``.
+
+    Per-target outcome enumeration uses target_p_outcome_ext, which depends
+    on the stem composition vector ``b``. Caps targets at 4 to match the
+    original.
+    """
+    if num_target > 4:
+        wgt_all = [w / sum(wgt_all[0:4]) for w in wgt_all[0:4]]
+        stemL_list = stemL_list[0:4]
+        totaMut_list = totaMut_list[0:4]
+        b_list = b_list[0:4]
+        num_target = 4
+
+    wgted_target_outcomes = []
+    target_pmf = []
+
+    for i in range(num_target):
+        targetp = target_p_outcome_ext(k, stemL_list[i], totaMut_list[i], b_list[i])
+        pmf = [targetp[0]] + [targetp[j + 1] - targetp[j] for j in range(len(targetp) - 1)]
+
+        target_pmf.append(pmf)
+        wgted_target_outcomes.append([wgt_all[i] * v for v in targetp])
+    return wgted_target_outcomes, target_pmf
+
 ### 2. Anchor p computation ###
 def target_p_outcome(k, stemL, totaMut):
     """
@@ -236,16 +283,41 @@ def anchor_p_target_subdf(sub_df):
     Step 5 (1): wrap all functions for one anchor and apply to sub-dataframe for stucture-target
     """
     p_val = sub_df['anchor_score'].iloc[0]
-        
+
     if len(sub_df) > 1:
         all_anchor_outcomes, anchor_pmf = pmf_anchor_score(*prep_for_conv(len(sub_df),\
                                                       list(sub_df['tar_wgt_filtered']), \
                                                       len(sub_df['base_target'].iloc[0]), \
                                                       list(sub_df['stemL']), \
                                                       list(sub_df['totaMut'])))
-            
+
         p_val = anchor_p(all_anchor_outcomes, anchor_pmf, p_val)
-        
+
+    return p_val
+
+
+def anchor_p_target_subdf_ext(sub_df):
+    """SVP analogue of ``anchor_p_target_subdf``.
+
+    Same shape, but uses the b_vector column (stem composition per target)
+    and ``prep_for_conv_ext``. All targets within an anchor share the same
+    base target, so b_vector is identical across rows; we still pass the
+    full list to keep the API symmetric.
+    """
+    p_val = sub_df['anchor_score'].iloc[0]
+
+    if len(sub_df) > 1:
+        all_anchor_outcomes, anchor_pmf = pmf_anchor_score(*prep_for_conv_ext(
+            len(sub_df),
+            list(sub_df['tar_wgt_filtered']),
+            len(sub_df['base_target'].iloc[0]),
+            list(sub_df['stemL']),
+            list(sub_df['totaMut']),
+            list(sub_df['b_vector']),
+        ))
+
+        p_val = anchor_p(all_anchor_outcomes, anchor_pmf, p_val)
+
     return p_val
 
 def anchor_p_compactor_subdf(sub_df):
@@ -274,6 +346,18 @@ def wrap_anchor_p_target(df):
     p_val_results = grouped.parallel_apply(anchor_p_target_subdf) # Apply function to each group
     # The result is a Series where the index is the group keys ('anchor' values)
     # We can now assign this back to your DataFrame, but you'll need to align the indices
+    df = df.merge(p_val_results.rename('anchor_p'), left_on='anchor', right_index=True)
+    return df
+
+
+def wrap_anchor_p_target_ext(df):
+    """SVP analogue of ``wrap_anchor_p_target``.
+
+    Requires the input dataframe to carry a ``b_vector`` column (added by
+    ``find_mutation_ext`` in Phase 2).
+    """
+    grouped = df.groupby('anchor')
+    p_val_results = grouped.parallel_apply(anchor_p_target_subdf_ext)
     df = df.merge(p_val_results.rename('anchor_p'), left_on='anchor', right_index=True)
     return df
 

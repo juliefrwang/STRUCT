@@ -162,17 +162,25 @@ def process_row(row):
                            "target_wgt": np.array(cnt_list)/(sum(cnt_list) + row["cnt_most_freq_target_1"])})
     return new_df
 
-def process_df(df, wgt_thres=0.05, stemL=5):
+def process_df(df, wgt_thres=0.05, stemL=5, wobble=False):
     """
     This function takes in a dataframe with significant anchors from SPLASH
     and returns a dataframe that hairpin structure is found in the base target.
-    Additionally, targets with weight w.r.t total occurences (M) < 0.05 are 
+    Additionally, targets with weight w.r.t total occurences (M) < 0.05 are
     dropped and the weight is recalculated. Both filtered and unfiltered target
-    weights are returned. 
+    weights are returned.
+
+    Parameters
+    ----------
+    wobble : bool
+        When True, use the wobble-aware stem finder ``find_stem_ind_wobble``
+        from the non-WCF extension; otherwise use the strict-WCF
+        ``find_stem_ind`` (default).
     """
 
     # find stems and store the index (both included)
-    df[["stem_start_idx", "stem_end_idx", "rc_start_idx", "rc_end_idx", "stemL"]] = pd.DataFrame(df.parallel_apply(lambda x: find_stem_ind(x.most_freq_target_1, 5), axis=1).tolist())
+    stem_finder = find_stem_ind_wobble if wobble else find_stem_ind
+    df[["stem_start_idx", "stem_end_idx", "rc_start_idx", "rc_end_idx", "stemL"]] = pd.DataFrame(df.parallel_apply(lambda x: stem_finder(x.most_freq_target_1, stemL), axis=1).tolist())
 
     # drop anchors without stem using condition stem_start_idx == stem_end_idx
     df = df[df.stemL != 0]

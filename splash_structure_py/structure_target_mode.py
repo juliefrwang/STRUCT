@@ -19,27 +19,37 @@ import splash_structure_py.src.find_comp_mut as find_comp_mut
 import splash_structure_py.src.get_pval as get_pval
 import splash_structure_py.src.elem_annas as elem_annas
 
-def SS_target(output_prefix, splash_output_file, element_annotation):
+def SS_target(output_prefix, splash_output_file, element_annotation, wobble=False):
 
     """ Step 0: Preparation """
     # Initialize parallelization. Create folder to save results
     pandarallel.initialize()
     outfolder = f'{output_prefix}_results'
     os.makedirs(outfolder, exist_ok=True)
-    
+
     """ Step 1: Read in the input file and process dataframe to get base targets and targets """
     df = pd.read_csv(splash_output_file, sep = '\t')
-    df = process_df(df)
+    df = process_df(df, wobble=wobble)
     # exit program if no structure is found in any target
     if len(df) == 0:
         print("No structure is found for any anchor. Exiting..")
         return
 
     """ Step 2: Find parameters that are to be used in anchor-p computation, along with three types of notations"""
-    df[["totaMut", "stemMut", "compMut", "strucNotation"]] = pd.DataFrame(df.parallel_apply(lambda x: find_comp_mut.find_mutation(x.base_target, \
-                                                x.target, x.stem_start_idx, x.stem_end_idx, x.rc_start_idx, x.rc_end_idx), axis=1).tolist())
+    if wobble:
+        # Extended path: SPC + BPC events under V_EXT, returns extra
+        # n_p_vector and b_vector columns consumed by target_p_ext.
+        df[["totaMut", "stemMut", "E", "strucNotation", "n_p_vector", "b_vector"]] = pd.DataFrame(
+            df.parallel_apply(lambda x: find_comp_mut.find_mutation_ext(
+                x.base_target, x.target,
+                x.stem_start_idx, x.stem_end_idx,
+                x.rc_start_idx, x.rc_end_idx), axis=1).tolist()
+        )
+    else:
+        df[["totaMut", "stemMut", "compMut", "strucNotation"]] = pd.DataFrame(df.parallel_apply(lambda x: find_comp_mut.find_mutation(x.base_target, \
+                                                    x.target, x.stem_start_idx, x.stem_end_idx, x.rc_start_idx, x.rc_end_idx), axis=1).tolist())
     # dot bracket notation
-    df["db_strucNotation"] = df.parallel_apply(lambda x: find_comp_mut.db_notation_from_old_notaion(x.strucNotation), axis=1) 
+    df["db_strucNotation"] = df.parallel_apply(lambda x: find_comp_mut.db_notation_from_old_notaion(x.strucNotation), axis=1)
     # symbol notation
     df["symbol_strucNotation"]= df.parallel_apply(lambda x: find_comp_mut.symbol_notation_from_old_notaion(x.strucNotation, x.db_strucNotation), axis=1)
 
@@ -48,15 +58,23 @@ def SS_target(output_prefix, splash_output_file, element_annotation):
     df['num_target'] = df.groupby('anchor')['target'].transform('count')
     df = df.loc[df.num_target > 2].reset_index(drop=True)
     # target_p
-    df["target_p"] = df.parallel_apply(lambda x: get_pval.target_p(len(x['base_target']), \
-                                       x['stemL'], x['totaMut'], x['stemMut'], x['compMut']), axis=1) 
-    
+    if wobble:
+        df["target_p"] = df.parallel_apply(lambda x: get_pval.target_p_ext(
+            len(x['base_target']), x['stemL'], x['totaMut'], x['stemMut'],
+            x['E'], x['b_vector']), axis=1)
+    else:
+        df["target_p"] = df.parallel_apply(lambda x: get_pval.target_p(len(x['base_target']), \
+                                           x['stemL'], x['totaMut'], x['stemMut'], x['compMut']), axis=1)
+
     """ Step 4: Calculate anchor_score """
     df["anchor_score"] = df["tar_wgt_filtered"] * df["target_p"]
     df["anchor_score"] = df.groupby(["anchor"])["anchor_score"].transform("sum")
 
     """ Step 5: Calculate anchor_p """
-    df = get_pval.wrap_anchor_p_target(df)
+    if wobble:
+        df = get_pval.wrap_anchor_p_target_ext(df)
+    else:
+        df = get_pval.wrap_anchor_p_target(df)
 
     """ Step 6: BH correction on anchors with number of target > 2 """
     df_temp = df[['anchor', 'anchor_p']].drop_duplicates()
