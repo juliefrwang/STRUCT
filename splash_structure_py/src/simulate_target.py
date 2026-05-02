@@ -67,11 +67,12 @@ def get_simulated_p_compactor(anchor_split, df, n_iter):
     base_target_2 = sub_df.loc[0, 'base_S2']
     stem_start_idx_2, stem_end_idx_2, rc_start_idx_2, rc_end_idx_2, stemL_2 = sub_df.loc[0, ['stem_start_idx_2', 'stem_end_idx_2', 'rc_start_idx_2', 'rc_end_idx_2', 'stemL_2']]
    
-    anchor_score_per_split=0
+    
     anchor_p_multi_simu = 0
     
     for n in range(n_iter):
-        anchor_p_one_simu = 0
+        anchor_score_per_split=0
+        anchor_p_one_simu = 0   
         for i in range(len(sub_df)):
             simu_target_1 = random_mutate(base_target_1, sub_df.totaMut_1.iloc[i])
             totaMut_1, stemMut_1, compMut_1, _ = find_comp_mut.find_mutation(base_target_1, simu_target_1, stem_start_idx_1, stem_end_idx_1, rc_start_idx_1, rc_end_idx_1)
