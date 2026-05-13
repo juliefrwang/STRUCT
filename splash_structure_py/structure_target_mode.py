@@ -19,7 +19,7 @@ import splash_structure_py.src.find_comp_mut as find_comp_mut
 import splash_structure_py.src.get_pval as get_pval
 import splash_structure_py.src.elem_annas as elem_annas
 
-def SS_target(output_prefix, splash_output_file, element_annotation, wobble=False):
+def SS_target(output_prefix, splash_output_file, element_annotation, wobble=False, titv=0.5):
 
     """ Step 0: Preparation """
     # Initialize parallelization. Create folder to save results
@@ -61,7 +61,7 @@ def SS_target(output_prefix, splash_output_file, element_annotation, wobble=Fals
     if wobble:
         df["target_p"] = df.parallel_apply(lambda x: get_pval.target_p_ext(
             len(x['base_target']), x['stemL'], x['totaMut'], x['stemMut'],
-            x['E'], x['b_vector']), axis=1)
+            x['E'], x['b_vector'], titv), axis=1)
     else:
         df["target_p"] = df.parallel_apply(lambda x: get_pval.target_p(len(x['base_target']), \
                                            x['stemL'], x['totaMut'], x['stemMut'], x['compMut']), axis=1)
@@ -72,7 +72,7 @@ def SS_target(output_prefix, splash_output_file, element_annotation, wobble=Fals
 
     """ Step 5: Calculate anchor_p """
     if wobble:
-        df = get_pval.wrap_anchor_p_target_ext(df)
+        df = get_pval.wrap_anchor_p_target_ext(df, titv=titv)
     else:
         df = get_pval.wrap_anchor_p_target(df)
 

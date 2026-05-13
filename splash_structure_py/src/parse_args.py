@@ -21,6 +21,14 @@ def argument_parser_target():
                              "Default off; the original WCF-only path is "
                              "byte-identical to prior versions when this "
                              "flag is omitted.")
+    parser.add_argument("--titv", type=float, default=0.5,
+                        help="Aggregate Ti/Tv event ratio (= #Ti / #Tv) "
+                             "assumed by the SVP/BPC null. Default 0.5 "
+                             "reproduces the uniform identity null of the "
+                             "original published model. Biological data "
+                             "typically sits near 2.0; pass --titv 2 to "
+                             "match such samples. Only consumed when "
+                             "--wobble is set.")
 
     arguments = parser.parse_args()
 

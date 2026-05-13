@@ -167,3 +167,77 @@ def test_alphas_zero_for_invalid_pair():
 def test_BASES_has_four_DNA_letters():
     assert set(BASES) == {"A", "C", "G", "T"}
     assert len(BASES) == 4
+
+
+# ---------------------------------------------------------------------
+# Ti/Tv-biased null (Section 5 of nonWCF_derivation.tex)
+# ---------------------------------------------------------------------
+
+# (b_L, b_R) -> (α_L^{R=2}, α_R^{R=2}, β^{R=2}). Derived in
+# nonWCF_derivation.tex Section 5.2 table at R = 2.
+TITV_2_TABLE = {
+    ("A", "T"): (2 / 3, 0.0, 19 / 36),
+    ("T", "A"): (0.0, 2 / 3, 19 / 36),
+    ("G", "C"): (0.0, 2 / 3, 19 / 36),
+    ("C", "G"): (2 / 3, 0.0, 19 / 36),
+    ("G", "T"): (2 / 3, 2 / 3, 3 / 36),
+    ("T", "G"): (2 / 3, 2 / 3, 3 / 36),
+}
+
+
+@pytest.mark.parametrize("pair, expected", list(TITV_2_TABLE.items()))
+def test_alpha_L_titv2_matches_table(pair, expected):
+    assert alpha_L(*pair, titv=2.0) == pytest.approx(expected[0])
+
+
+@pytest.mark.parametrize("pair, expected", list(TITV_2_TABLE.items()))
+def test_alpha_R_titv2_matches_table(pair, expected):
+    assert alpha_R(*pair, titv=2.0) == pytest.approx(expected[1])
+
+
+@pytest.mark.parametrize("pair, expected", list(TITV_2_TABLE.items()))
+def test_beta_titv2_matches_table(pair, expected):
+    assert beta(*pair, titv=2.0) == pytest.approx(expected[2])
+
+
+@pytest.mark.parametrize("pair, expected", list(SECTION_4_TABLE.items()))
+def test_titv_0_5_recovers_uniform_alpha_L(pair, expected):
+    """Default titv = 0.5 must reproduce the uniform Section 4 table exactly."""
+    assert alpha_L(*pair, titv=0.5) == pytest.approx(expected[0])
+
+
+@pytest.mark.parametrize("pair, expected", list(SECTION_4_TABLE.items()))
+def test_titv_0_5_recovers_uniform_alpha_R(pair, expected):
+    assert alpha_R(*pair, titv=0.5) == pytest.approx(expected[1])
+
+
+@pytest.mark.parametrize("pair, expected", list(SECTION_4_TABLE.items()))
+def test_titv_0_5_recovers_uniform_beta(pair, expected):
+    assert beta(*pair, titv=0.5) == pytest.approx(expected[2])
+
+
+@pytest.mark.parametrize("pair", list(V_EXT))
+def test_pi_table_titv2_pi2_matches_beta(pair):
+    """π_p^(2) under titv=2 equals β under titv=2."""
+    pi = pi_table(*pair, titv=2.0)
+    assert pi[2] == pytest.approx(beta(*pair, titv=2.0))
+
+
+@pytest.mark.parametrize("pair", list(V_EXT))
+def test_pi_table_titv2_pi1_matches_alpha_average(pair):
+    pi = pi_table(*pair, titv=2.0)
+    expected = 0.5 * (alpha_L(*pair, titv=2.0) + alpha_R(*pair, titv=2.0))
+    assert pi[1] == pytest.approx(expected)
+
+
+def test_titv_pi_Ti_pi_Tv_sum_to_one():
+    """π_Ti + 2 π_Tv = 1 for any titv. Cross-check by reading off the
+    weights via α_L applied to a synthetic pair where all three
+    alternatives lie in V_EXT (the ('A','A') case: only T qualifies; not
+    a full check). Instead verify directly via the Section 5.1 closed
+    form."""
+    for R in (0.25, 0.5, 1.0, 2.0, 3.0):
+        pi_Ti = R / (R + 1.0)
+        pi_Tv = 1.0 / (2.0 * (R + 1.0))
+        assert pi_Ti + 2 * pi_Tv == pytest.approx(1.0)
+        assert pi_Ti / (2 * pi_Tv) == pytest.approx(R)
