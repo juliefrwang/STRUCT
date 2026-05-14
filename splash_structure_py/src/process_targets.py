@@ -58,37 +58,47 @@ def find_stem_ind_wobble(target, stem_L=5):
     reverse-complement substring match in ``find_stem_ind`` with a
     position-by-position membership check.
 
-    Selection order (per Decision 1 in IMPLEMENTATION_PLAN_nonwcf.md):
+    Selection order:
 
-    1. Fewest wobble positions (WCF-only beats any wobble-using stem).
-    2. Longest stem.
+    1. Longest stem (length-greedy).
+    2. Fewest wobble positions (tiebreaker among same-length stems;
+       WCF-only beats any wobble-using stem at the same length).
     3. Leftmost left-stem start.
     4. Leftmost right-stem start.
 
-    No cap on the number of wobble positions.
+    Wobble cap: candidates with more than ``floor(L / 2)`` wobble pairs
+    are rejected. The cap bounds the false-positive risk from
+    sequence-chance wobble-pile stems while allowing genuine extensions
+    (e.g., the documented G·U pairs in HIV TAR's lower stem). If every
+    candidate stem of length >= ``stem_L`` violates the cap, the
+    function returns the no-stem sentinel.
 
     Returns
     -------
     list or tuple
         ``(stem_start_idx, stem_end_idx, rc_start_idx, rc_end_idx, stemL)``
-        if a stem of length >= ``stem_L`` is found, else ``[0, 0, 0, 0, 0]``.
-        Index conventions match ``find_stem_ind``.
+        if a stem of length >= ``stem_L`` and ``n_wobble <= L // 2`` is
+        found, else ``[0, 0, 0, 0, 0]``. Index conventions match
+        ``find_stem_ind``.
 
     Notes
     -----
-    Backward compatibility: when ``target`` admits a strict-WCF stem,
-    ``find_stem_ind_wobble`` returns the same indices as ``find_stem_ind``
-    (the WCF stem has 0 wobble and dominates the tie-breaking).
+    Backward compatibility with the strict-WCF finder is preserved
+    *only* when no longer cap-satisfying wobble-using stem exists in
+    the target. A target admitting both a 5-pair WCF stem and a 7-pair
+    stem with one wobble will now return the 7-pair stem (whereas the
+    prior priority would have returned the WCF stem).
     """
     n = len(target)
     max_size = n // 2
     if max_size < stem_L:
         return [0, 0, 0, 0, 0]
 
-    best = None  # (n_wobble, -length, left_start, right_start, length)
+    best = None  # (-length, n_wobble, left_start, right_start, length)
 
     for i in range(stem_L, max_size + 1):
-        # i = candidate stem length
+        # i = candidate stem length. Hard cap on wobble pairs.
+        wobble_cap = i // 2
         for j in range(n - 2 * i + 1):
             # j = left stem start
             for k in range(j + i, n - i + 1):
@@ -104,15 +114,18 @@ def find_stem_ind_wobble(target, stem_L=5):
                         break
                     if pair in V_WOBBLE:
                         n_wobble += 1
+                        if n_wobble > wobble_cap:
+                            ok = False
+                            break
                 if ok:
-                    candidate = (n_wobble, -i, j, k, i)
+                    candidate = (-i, n_wobble, j, k, i)
                     if best is None or candidate < best:
                         best = candidate
 
     if best is None:
         return [0, 0, 0, 0, 0]
 
-    n_wobble, neg_i, j, k, i = best
+    neg_i, n_wobble, j, k, i = best
     stem_start_idx = j
     stem_end_idx = j + i - 1
     rc_start_idx = k
