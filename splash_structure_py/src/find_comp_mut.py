@@ -6,7 +6,7 @@ The script also provides three ways for strucutre notation.
 import numpy as np
 import pandas as pd
 
-from splash_structure_py.src.non_wcf import V_EXT
+from splash_structure_py.src.non_wcf import V_EXT  # default valid set
 
 
 def rc(seq):
@@ -75,11 +75,14 @@ def find_mutation(base, target, stem_start_idx, stem_end_idx, rc_start_idx, rc_e
 
 def find_mutation_ext(base, target,
                       stem_start_idx, stem_end_idx,
-                      rc_start_idx, rc_end_idx):
-    """Extended-V_EXT version of ``find_mutation`` for the non-WCF (G·U
-    wobble) extension. Recognises wobble pairs as structure-supporting
-    and counts both single-position-compatible (SPC) and base-pair-
-    covariation (BPC) events.
+                      rc_start_idx, rc_end_idx,
+                      valid=V_EXT):
+    """Extended version of ``find_mutation`` for the non-canonical
+    extension. Recognises pairs in the valid set ``valid`` = V(N) as
+    structure-supporting and counts both single-position-compatible
+    (SPC) and base-pair-covariation (BPC) events. Default
+    ``valid = V_EXT`` (V_WCF ∪ G·U) ⇒ byte-identical to the prior
+    G·U-only behaviour.
 
     Parameters
     ----------
@@ -143,7 +146,7 @@ def find_mutation_ext(base, target,
         n_p_vector.append(n_p)
         stemMut += n_p
 
-        if n_p > 0 and (new_b_L, new_b_R) in V_EXT:
+        if n_p > 0 and (new_b_L, new_b_R) in valid:
             E_p = 1
         else:
             E_p = 0

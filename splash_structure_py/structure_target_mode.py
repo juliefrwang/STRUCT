@@ -15,13 +15,27 @@ from pandarallel import pandarallel
 
 from splash_structure_py.src.parse_args import *
 from splash_structure_py.src.process_targets import *
+from splash_structure_py.src.non_wcf import build_valid_set
 import splash_structure_py.src.find_comp_mut as find_comp_mut
 import splash_structure_py.src.get_pval as get_pval
 import splash_structure_py.src.elem_annas as elem_annas
 
-def SS_target(output_prefix, splash_output_file, element_annotation, wobble=False, titv=0.5):
+def SS_target(output_prefix, splash_output_file, element_annotation,
+              wobble=False, titv=0.5, noncanon=None):
 
     """ Step 0: Preparation """
+    # Resolve the non-canonical specification (decision D3 — the gate is
+    # folded into `noncanon`). Backward compat: if `noncanon` is not given
+    # explicitly, derive it from the legacy `wobble` bool so existing
+    # callers/tests are byte-identical.
+    #   noncanon given          -> use it (gate + parameterize)
+    #   noncanon None, wobble=T -> "GU"  (== old --wobble behaviour)
+    #   noncanon None, wobble=F -> "none" (legacy WCF-only path)
+    if noncanon is None:
+        noncanon = "GU" if wobble else "none"
+    extended = str(noncanon).strip().lower() not in {"none", ""}
+    valid = build_valid_set(noncanon) if extended else None
+
     # Initialize parallelization. Create folder to save results
     pandarallel.initialize()
     outfolder = f'{output_prefix}_results'
@@ -29,21 +43,21 @@ def SS_target(output_prefix, splash_output_file, element_annotation, wobble=Fals
 
     """ Step 1: Read in the input file and process dataframe to get base targets and targets """
     df = pd.read_csv(splash_output_file, sep = '\t')
-    df = process_df(df, wobble=wobble)
+    df = process_df(df, wobble=extended, valid=valid if extended else V_EXT)
     # exit program if no structure is found in any target
     if len(df) == 0:
         print("No structure is found for any anchor. Exiting..")
         return
 
     """ Step 2: Find parameters that are to be used in anchor-p computation, along with three types of notations"""
-    if wobble:
-        # Extended path: SPC + BPC events under V_EXT, returns extra
+    if extended:
+        # Extended path: SPC + BPC events under V(N), returns extra
         # n_p_vector and b_vector columns consumed by target_p_ext.
         df[["totaMut", "stemMut", "E", "strucNotation", "n_p_vector", "b_vector"]] = pd.DataFrame(
             df.parallel_apply(lambda x: find_comp_mut.find_mutation_ext(
                 x.base_target, x.target,
                 x.stem_start_idx, x.stem_end_idx,
-                x.rc_start_idx, x.rc_end_idx), axis=1).tolist()
+                x.rc_start_idx, x.rc_end_idx, valid), axis=1).tolist()
         )
     else:
         df[["totaMut", "stemMut", "compMut", "strucNotation"]] = pd.DataFrame(df.parallel_apply(lambda x: find_comp_mut.find_mutation(x.base_target, \
@@ -58,10 +72,10 @@ def SS_target(output_prefix, splash_output_file, element_annotation, wobble=Fals
     df['num_target'] = df.groupby('anchor')['target'].transform('count')
     df = df.loc[df.num_target > 2].reset_index(drop=True)
     # target_p
-    if wobble:
+    if extended:
         df["target_p"] = df.parallel_apply(lambda x: get_pval.target_p_ext(
             len(x['base_target']), x['stemL'], x['totaMut'], x['stemMut'],
-            x['E'], x['b_vector'], titv), axis=1)
+            x['E'], x['b_vector'], titv, valid), axis=1)
     else:
         df["target_p"] = df.parallel_apply(lambda x: get_pval.target_p(len(x['base_target']), \
                                            x['stemL'], x['totaMut'], x['stemMut'], x['compMut']), axis=1)
@@ -71,8 +85,8 @@ def SS_target(output_prefix, splash_output_file, element_annotation, wobble=Fals
     df["anchor_score"] = df.groupby(["anchor"])["anchor_score"].transform("sum")
 
     """ Step 5: Calculate anchor_p """
-    if wobble:
-        df = get_pval.wrap_anchor_p_target_ext(df, titv=titv)
+    if extended:
+        df = get_pval.wrap_anchor_p_target_ext(df, titv=titv, valid=valid)
     else:
         df = get_pval.wrap_anchor_p_target(df)
 
