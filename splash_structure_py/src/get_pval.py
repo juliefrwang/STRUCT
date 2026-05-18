@@ -6,7 +6,7 @@ import itertools
 import sys
 from pandarallel import pandarallel
 
-from splash_structure_py.src.non_wcf import pi_table
+from splash_structure_py.src.non_wcf import pi_table, V_EXT
 
 ### 1. Target p computation ###
 def target_p1_closed_form(k, v, L, c):
@@ -50,7 +50,7 @@ def target_p(k, stemL, totaMut, stemMut, compMut):
 
 ### 1b. Extended (SVP) target p computation — non-WCF wobble extension ###
 
-def target_p_svp(k, v, L, e, b, titv=0.5):
+def target_p_svp(k, v, L, e, b, titv=0.5, valid=V_EXT):
     """
     SVP (Stem-Variation-Presence) target p-value via the dynamic-programming
     algorithm in nonWCF_derivation.tex Section 5.4.
@@ -87,7 +87,7 @@ def target_p_svp(k, v, L, e, b, titv=0.5):
         raise ValueError(f"len(b) = {len(b)} but L = {L}")
 
     # Per-pair Bernoulli parameters pi_p^(j) for j in {1, 2}.
-    pis = [pi_table(b_L, b_R, titv) for (b_L, b_R) in b]
+    pis = [pi_table(b_L, b_R, titv, valid) for (b_L, b_R) in b]
 
     total = 0.0
     h_max = min(v, 2 * L)
@@ -135,7 +135,7 @@ def target_p_svp(k, v, L, e, b, titv=0.5):
     return total
 
 
-def target_p_ext(k, stemL, totaMut, stemMut, e, b, titv=0.5):
+def target_p_ext(k, stemL, totaMut, stemMut, e, b, titv=0.5, valid=V_EXT):
     """
     Extended target p-value combining SVE (s = 0) and SVP (s > 0)
     via an indicator on stemMut, per Section 6 of nonWCF_derivation.tex.
@@ -170,16 +170,16 @@ def target_p_ext(k, stemL, totaMut, stemMut, e, b, titv=0.5):
         # SVE: Pr(all v mismatches outside stem). Identity-free, so titv
         # does not enter.
         return comb(k - 2 * stemL, totaMut) / comb(k, totaMut)
-    return target_p_svp(k, totaMut, stemL, e, b, titv)
+    return target_p_svp(k, totaMut, stemL, e, b, titv, valid)
 
 
-def _g_L_table(k, v, L, b, titv=0.5):
+def _g_L_table(k, v, L, b, titv=0.5, valid=V_EXT):
     """Run the L-pair DP from nonWCF_derivation.tex section 5.4 and
     return the final unnormalised g_L[h][m] table.
 
     Pr(E = m | H = h, b) = g_L[h][m] / C(2L, h).
     """
-    pis = [pi_table(b_L, b_R, titv) for (b_L, b_R) in b]
+    pis = [pi_table(b_L, b_R, titv, valid) for (b_L, b_R) in b]
     h_max = min(v, 2 * L)
 
     prev = [[0.0] * (L + 1) for _ in range(2 * L + 1)]
@@ -209,7 +209,7 @@ def _g_L_table(k, v, L, b, titv=0.5):
     return prev
 
 
-def target_p_marginal_ext(k, stemL, totaMut, b, titv=0.5):
+def target_p_marginal_ext(k, stemL, totaMut, b, titv=0.5, valid=V_EXT):
     """Exact marginal PMF of target_p_ext under H_0.
 
     Returns ``(support, pmf)`` where ``support`` is the sorted (ascending)
@@ -239,11 +239,11 @@ def target_p_marginal_ext(k, stemL, totaMut, b, titv=0.5):
 
     # Run the DP once to get the joint Pr(H = h, E = m | b) up to the
     # multivariate-hypergeometric normalisation.
-    g_L = _g_L_table(k, v, L, b, titv)
+    g_L = _g_L_table(k, v, L, b, titv, valid)
 
     # Pre-compute target_p_svp(e) for each e in 0..L. Calls cache the
     # marginal-over-h SVP p-value used by the indicator switch when h >= 1.
-    p_svp_for_e = [target_p_svp(k, v, L, e, b, titv) for e in range(L + 1)]
+    p_svp_for_e = [target_p_svp(k, v, L, e, b, titv, valid) for e in range(L + 1)]
     q0 = comb(k - 2 * L, v) / comb(k, v) if comb(k, v) > 0 else 0.0
 
     pmf_dict: dict[float, float] = {}
@@ -281,15 +281,15 @@ def target_p_marginal_ext(k, stemL, totaMut, b, titv=0.5):
     return support, pmf
 
 
-def target_p_outcome_ext(k, stemL, totaMut, b, titv=0.5):
+def target_p_outcome_ext(k, stemL, totaMut, b, titv=0.5, valid=V_EXT):
     """Backward-compatible wrapper returning only the sorted support of
     target_p_ext under H_0. Prefer ``target_p_marginal_ext`` when the
     paired PMF is needed."""
-    support, _ = target_p_marginal_ext(k, stemL, totaMut, b, titv)
+    support, _ = target_p_marginal_ext(k, stemL, totaMut, b, titv, valid)
     return support
 
 
-def prep_for_conv_ext(num_target, wgt_all, k, stemL_list, totaMut_list, b_list, titv=0.5):
+def prep_for_conv_ext(num_target, wgt_all, k, stemL_list, totaMut_list, b_list, titv=0.5, valid=V_EXT):
     """SVP analogue of ``prep_for_conv``.
 
     Per-target marginal PMF is computed exactly via target_p_marginal_ext
@@ -309,7 +309,7 @@ def prep_for_conv_ext(num_target, wgt_all, k, stemL_list, totaMut_list, b_list, 
 
     for i in range(num_target):
         support, pmf = target_p_marginal_ext(
-            k, stemL_list[i], totaMut_list[i], b_list[i], titv
+            k, stemL_list[i], totaMut_list[i], b_list[i], titv, valid
         )
         target_pmf.append(pmf)
         wgted_target_outcomes.append([wgt_all[i] * p for p in support])
@@ -401,7 +401,7 @@ def anchor_p_target_subdf(sub_df):
     return p_val
 
 
-def anchor_p_target_subdf_ext(sub_df, titv=0.5):
+def anchor_p_target_subdf_ext(sub_df, titv=0.5, valid=V_EXT):
     """SVP analogue of ``anchor_p_target_subdf``.
 
     Same shape, but uses the b_vector column (stem composition per target)
@@ -420,6 +420,7 @@ def anchor_p_target_subdf_ext(sub_df, titv=0.5):
             list(sub_df['totaMut']),
             list(sub_df['b_vector']),
             titv,
+            valid,
         ))
 
         p_val = anchor_p(all_anchor_outcomes, anchor_pmf, p_val)
@@ -456,17 +457,17 @@ def wrap_anchor_p_target(df):
     return df
 
 
-def wrap_anchor_p_target_ext(df, titv=0.5):
+def wrap_anchor_p_target_ext(df, titv=0.5, valid=V_EXT):
     """SVP analogue of ``wrap_anchor_p_target``.
 
     Requires the input dataframe to carry a ``b_vector`` column (added by
-    ``find_mutation_ext`` in Phase 2). ``titv`` is bound into the per-group
-    callable via ``functools.partial`` so it travels through pandarallel's
-    serialisation unchanged.
+    ``find_mutation_ext`` in Phase 2). ``titv`` and ``valid`` are bound
+    into the per-group callable via ``functools.partial`` so they travel
+    through pandarallel's serialisation unchanged.
     """
     grouped = df.groupby('anchor')
     p_val_results = grouped.parallel_apply(
-        functools.partial(anchor_p_target_subdf_ext, titv=titv)
+        functools.partial(anchor_p_target_subdf_ext, titv=titv, valid=valid)
     )
     df = df.merge(p_val_results.rename('anchor_p'), left_on='anchor', right_index=True)
     return df
