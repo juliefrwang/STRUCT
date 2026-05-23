@@ -14,13 +14,26 @@ from pandarallel import pandarallel
 
 from splash_structure_py.src.parse_args import *
 from splash_structure_py.src.process_targets import *
+from splash_structure_py.src.non_wcf import build_valid_set
 import splash_structure_py.src.find_comp_mut as find_comp_mut
 import splash_structure_py.src.get_pval as get_pval
 import splash_structure_py.src.elem_annas as elem_annas
 
 
-def SS_compactor(output_prefix, compactor_file, element_annotation):
+def SS_compactor(output_prefix, compactor_file, element_annotation,
+                 wobble=False, titv=0.5, noncanon=None):
     """ Step 0: Preparation """
+    # Resolve the non-canonical specification (gate folded into
+    # `noncanon`, mirroring SS_target). Backward compat: if `noncanon`
+    # is not given explicitly, derive it from the legacy `wobble` bool.
+    #   noncanon given          -> use it (gate + parameterize)
+    #   noncanon None, wobble=T -> "GU"  (== old --wobble behaviour)
+    #   noncanon None, wobble=F -> "none" (legacy WCF-only path)
+    if noncanon is None:
+        noncanon = "GU" if wobble else "none"
+    extended = str(noncanon).strip().lower() not in {"none", ""}
+    valid = build_valid_set(noncanon) if extended else None
+
     # Initialize parallelization. Create folder to save results
     pandarallel.initialize()
     outfolder = f'{output_prefix}_results'

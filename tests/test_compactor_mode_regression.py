@@ -1,13 +1,16 @@
 """WCF regression test: SS_compactor (legacy WCF-only path) must produce
-output byte-identical to the golden generated from ``feature/non-wcf``.
+output byte-identical to the golden saved in
+``tests/test_data/golden_compactor_mode_wcf.tsv``.
 
-The golden file was produced by running ``SS_compactor`` on
-``feature/non-wcf`` (commit prior to the compactor-mode extension)
-against ``tests/test_data/test.compactor.tsv`` and saved as
-``tests/test_data/golden_compactor_mode_wcf.tsv``. ``feature/non-wcf``
-does not touch ``structure_compactor_mode.py`` (per target-mode
-implementation plan Decision 3), so this golden equivalently represents
-the ``main`` compactor-mode behaviour.
+The golden was first captured on ``feature/non-wcf`` prior to the
+compactor-mode extension (Phase C0). Phase C1 refreshed it to absorb
+the ``k = 80 → len(base_S1) + len(base_S2)`` fix in
+``anchor_p_compactor_subdf`` (Decision C2 of
+``IMPLEMENTATION_PLAN_nonwcf_compactor.md``) — this is a latent-bug
+correction, not a behavioural change to the extended path, and shifts
+only the ``anchor_p`` / ``anchor_p_BH`` columns. All upstream columns
+(stem detection, mutation counts, ``compactor_p``) are unchanged from
+the pre-fix golden.
 
 Any change to the legacy compactor-mode code path that breaks this test
 is a regression on backward compatibility. The companion extended-path

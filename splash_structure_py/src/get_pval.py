@@ -433,16 +433,21 @@ def anchor_p_compactor_subdf(sub_df):
     """
     # for compactors, we compute anchor-score for each split
     p_val = sub_df['anchor_score_per_split'].iloc[0]
-    
+
     if len(sub_df) > 1:
-        # structure evaluation length for compactor is 80 (HARDCODED)
+        # Virtual-target length is the sum of the two recombined halves
+        # (split-and-concatenate of the 54 nt trimmed compactor). Was
+        # hardcoded to 80 in earlier versions, which is the wrong
+        # discrete support size for the convolution; fixed here per
+        # IMPLEMENTATION_PLAN_nonwcf_compactor.md C2.
+        k = len(sub_df['base_S1'].iloc[0]) + len(sub_df['base_S2'].iloc[0])
         all_anchor_outcomes, anchor_pmf = pmf_anchor_score(*prep_for_conv(len(sub_df),\
                                                       list(sub_df['compactor_weight']), \
-                                                      80, \
+                                                      k, \
                                                       list(sub_df['stemL']), \
                                                       list(sub_df['totaMut'])))
         p_val = anchor_p(all_anchor_outcomes, anchor_pmf, p_val)
-        
+
     return p_val
 
 def wrap_anchor_p_target(df):
