@@ -263,3 +263,48 @@ def test_original_find_mutation_unchanged():
     assert totaMut == 2
     assert stemMut == 2
     assert compMut == 1  # one compensatory pair
+
+
+# ---------------------------------------------------------------------
+# Compactor-mode no-stem-half sentinel (Phase C2)
+# ---------------------------------------------------------------------
+
+def test_no_stem_sentinel_returns_empty_vectors():
+    """Compactor mode calls find_mutation_ext on each of the two halves,
+    including halves where the stem-finder returned the no-stem sentinel
+    (0, 0, 0, 0, 0). The function must return empty per-pair vectors and
+    NaN struc rather than fabricating a phantom L=1 pair at index 0.
+    """
+    import math
+
+    base = "ACGTACGTACGT"
+    target = "ACGTACGAACGA"  # differs at indices 7 and 11; index 0 unchanged
+    totaMut, stemMut, E, struc, n_p, b = find_mutation_ext(
+        base, target, 0, 0, 0, 0
+    )
+    assert totaMut == 2  # outside-stem Hamming distance over the whole half
+    assert stemMut == 0
+    assert E == 0
+    assert n_p == []  # no phantom pair
+    assert b == []  # no phantom composition entry
+    assert isinstance(struc, float) and math.isnan(struc)
+
+
+def test_no_stem_sentinel_with_mutation_at_index_zero():
+    """Regression for the previous L = stem_end_idx - stem_start_idx + 1
+    bug: when both indices are 0, naive arithmetic would set L = 1 and
+    treat position 0 as a phantom stem pair, sometimes counting an
+    index-0 mutation toward stemMut. The early return must include any
+    index-0 difference in totaMut (outside-stem walk) and keep stemMut
+    at 0.
+    """
+    base = "ACGT"
+    target = "GCGT"  # mutation at index 0
+    totaMut, stemMut, E, struc, n_p, b = find_mutation_ext(
+        base, target, 0, 0, 0, 0
+    )
+    assert totaMut == 1
+    assert stemMut == 0
+    assert E == 0
+    assert n_p == []
+    assert b == []

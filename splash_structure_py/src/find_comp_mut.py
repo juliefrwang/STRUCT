@@ -117,7 +117,21 @@ def find_mutation_ext(base, target,
     -----
     The original ``find_mutation`` is left untouched; this function is
     introduced behind the Phase 4 ``--wobble`` CLI flag.
+
+    No-stem sentinel: compactor mode calls this function on each of the
+    two recombined halves, including halves where the stem-finder
+    returned ``(0, 0, 0, 0, 0)`` (no stem detected). In that case
+    ``stem_end_idx == stem_start_idx == 0`` and a naive
+    ``L = stem_end_idx - stem_start_idx + 1`` would equal 1, producing a
+    phantom pair and contaminating ``b_vector`` / ``n_p_vector``. We
+    short-circuit that case to return the outside-stem Hamming distance
+    with empty per-pair vectors, matching the ``struc = np.nan``
+    convention from the legacy ``find_mutation``.
     """
+    if stem_end_idx == 0 and stem_start_idx == 0:
+        totaMut = sum(1 for i in range(len(base)) if base[i] != target[i])
+        return (totaMut, 0, 0, np.nan, [], [])
+
     L = stem_end_idx - stem_start_idx + 1
     struc = ['-'] * len(base)
 

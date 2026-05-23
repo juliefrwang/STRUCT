@@ -62,18 +62,22 @@ def SS_compactor(output_prefix, compactor_file, element_annotation,
         print("No structure is found for any anchor. Exiting..")
         return
 
-    """ 
-    Step 3: Find parameters that are to be used in anchor-p computation, 
+    """
+    Step 3: Find parameters that are to be used in anchor-p computation,
     along with three types of notations
     """
-    # find stem loop index
-    df[["stem_start_idx_1", "stem_end_idx_1", "rc_start_idx_1", "rc_end_idx_1", "stemL_1"]] = pd.DataFrame(df.parallel_apply(lambda x: find_stem_ind(x.base_S1, 5), axis=1).tolist())
-    df[["stem_start_idx_2", "stem_end_idx_2", "rc_start_idx_2", "rc_end_idx_2", "stemL_2"]] = pd.DataFrame(df.parallel_apply(lambda x: find_stem_ind(x.base_S2, 5), axis=1).tolist())
+    # find stem loop index (wobble-aware when extended)
+    if extended:
+        df[["stem_start_idx_1", "stem_end_idx_1", "rc_start_idx_1", "rc_end_idx_1", "stemL_1"]] = pd.DataFrame(df.parallel_apply(lambda x: find_stem_ind_wobble(x.base_S1, 5, valid), axis=1).tolist())
+        df[["stem_start_idx_2", "stem_end_idx_2", "rc_start_idx_2", "rc_end_idx_2", "stemL_2"]] = pd.DataFrame(df.parallel_apply(lambda x: find_stem_ind_wobble(x.base_S2, 5, valid), axis=1).tolist())
+    else:
+        df[["stem_start_idx_1", "stem_end_idx_1", "rc_start_idx_1", "rc_end_idx_1", "stemL_1"]] = pd.DataFrame(df.parallel_apply(lambda x: find_stem_ind(x.base_S1, 5), axis=1).tolist())
+        df[["stem_start_idx_2", "stem_end_idx_2", "rc_start_idx_2", "rc_end_idx_2", "stemL_2"]] = pd.DataFrame(df.parallel_apply(lambda x: find_stem_ind(x.base_S2, 5), axis=1).tolist())
 
     # Add a column of number of stem-loop structure found in the compactors
     df['num_stem_loop'] = (df['stemL_1'] != 0).astype(int) + (df['stemL_2'] != 0).astype(int)
 
-    # drop anchors without stem using condition num_stem_loop == 0 
+    # drop anchors without stem using condition num_stem_loop == 0
     df = df[df.num_stem_loop != 0].reset_index(drop = True)
 
     # exit program if no structure is found in any target
@@ -82,21 +86,36 @@ def SS_compactor(output_prefix, compactor_file, element_annotation,
         return
 
     # find mutations in stem & addition two columns for structure notations
-    df[["totaMut_1", "stemMut_1", "compMut_1", "strucNotation_1"]] = pd.DataFrame(df.parallel_apply(lambda x: find_comp_mut.find_mutation(x.base_S1, \
-                                                    x.S1, x.stem_start_idx_1, x.stem_end_idx_1, x.rc_start_idx_1, x.rc_end_idx_1), axis=1).tolist())
-    df["db_strucNotation_1"] = df.parallel_apply(lambda x: find_comp_mut.db_notation_from_old_notaion(x.strucNotation_1), axis=1) 
+    if extended:
+        df[["totaMut_1", "stemMut_1", "E_1", "strucNotation_1", "n_p_vector_1", "b_vector_1"]] = pd.DataFrame(df.parallel_apply(lambda x: find_comp_mut.find_mutation_ext(x.base_S1, \
+                                                        x.S1, x.stem_start_idx_1, x.stem_end_idx_1, x.rc_start_idx_1, x.rc_end_idx_1, valid), axis=1).tolist())
+    else:
+        df[["totaMut_1", "stemMut_1", "compMut_1", "strucNotation_1"]] = pd.DataFrame(df.parallel_apply(lambda x: find_comp_mut.find_mutation(x.base_S1, \
+                                                        x.S1, x.stem_start_idx_1, x.stem_end_idx_1, x.rc_start_idx_1, x.rc_end_idx_1), axis=1).tolist())
+    df["db_strucNotation_1"] = df.parallel_apply(lambda x: find_comp_mut.db_notation_from_old_notaion(x.strucNotation_1), axis=1)
     df["symbol_strucNotation_1"]= df.parallel_apply(lambda x: find_comp_mut.symbol_notation_from_old_notaion(x.strucNotation_1, x.db_strucNotation_1), axis=1)
 
-    df[["totaMut_2", "stemMut_2", "compMut_2", "strucNotation_2"]] = pd.DataFrame(df.parallel_apply(lambda x: find_comp_mut.find_mutation(x.base_S2, \
-                                                    x.S2, x.stem_start_idx_2, x.stem_end_idx_2, x.rc_start_idx_2, x.rc_end_idx_2), axis=1).tolist())
-    df["db_strucNotation_2"] = df.parallel_apply(lambda x: find_comp_mut.db_notation_from_old_notaion(x.strucNotation_2), axis=1) 
+    if extended:
+        df[["totaMut_2", "stemMut_2", "E_2", "strucNotation_2", "n_p_vector_2", "b_vector_2"]] = pd.DataFrame(df.parallel_apply(lambda x: find_comp_mut.find_mutation_ext(x.base_S2, \
+                                                        x.S2, x.stem_start_idx_2, x.stem_end_idx_2, x.rc_start_idx_2, x.rc_end_idx_2, valid), axis=1).tolist())
+    else:
+        df[["totaMut_2", "stemMut_2", "compMut_2", "strucNotation_2"]] = pd.DataFrame(df.parallel_apply(lambda x: find_comp_mut.find_mutation(x.base_S2, \
+                                                        x.S2, x.stem_start_idx_2, x.stem_end_idx_2, x.rc_start_idx_2, x.rc_end_idx_2), axis=1).tolist())
+    df["db_strucNotation_2"] = df.parallel_apply(lambda x: find_comp_mut.db_notation_from_old_notaion(x.strucNotation_2), axis=1)
     df["symbol_strucNotation_2"]= df.parallel_apply(lambda x: find_comp_mut.symbol_notation_from_old_notaion(x.strucNotation_2, x.db_strucNotation_2), axis=1)
 
     # compute compactor_p (target_p in target mode) using summation of two segaments
-    df['stemL'] = df['stemL_1'] + df['stemL_2'] 
+    df['stemL'] = df['stemL_1'] + df['stemL_2']
     df['totaMut'] = df['totaMut_1'] + df['totaMut_2']
     df['stemMut'] = df['stemMut_1'] + df['stemMut_2']
-    df['compMut'] = df['compMut_1'] + df['compMut_2']
+    if extended:
+        # E and stem-composition concatenation b_1 ⊕ b_2; DP is order-
+        # invariant in b so the concatenation convention is arbitrary.
+        df['E'] = df['E_1'] + df['E_2']
+        df['b_vector'] = df.apply(lambda x: list(x['b_vector_1']) + list(x['b_vector_2']), axis=1)
+        df['n_p_vector'] = df.apply(lambda x: list(x['n_p_vector_1']) + list(x['n_p_vector_2']), axis=1)
+    else:
+        df['compMut'] = df['compMut_1'] + df['compMut_2']
 
     """ Step 4: Calculate structure target-p """
     df["compactor_p"] = df.parallel_apply(lambda x: get_pval.target_p(2 * len(x['base_S1']), x['stemL'], x['totaMut'], x['stemMut'], x['compMut']), axis=1) 
