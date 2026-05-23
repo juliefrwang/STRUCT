@@ -118,12 +118,19 @@ def SS_compactor(output_prefix, compactor_file, element_annotation,
         df['compMut'] = df['compMut_1'] + df['compMut_2']
 
     """ Step 4: Calculate structure target-p """
+    # Virtual-target length is the sum of the two recombined halves
+    # (split-and-concatenate of the 54 nt trimmed compactor). The legacy
+    # path used 2 * len(base_S1), which is correct only for D2 / D3
+    # permutations (base_S1 = base_S2 = 27 nt) and over-counts by 2 for
+    # D1 (base_S1 = 28, base_S2 = 26 → true k = 54, was 56). Same fix
+    # pattern as the C1 k=80 → len(base_S1) + len(base_S2) fix in
+    # anchor_p_compactor_subdf.
     if extended:
         df["compactor_p"] = df.parallel_apply(lambda x: get_pval.target_p_ext(
             len(x['base_S1']) + len(x['base_S2']), x['stemL'], x['totaMut'],
             x['stemMut'], x['E'], x['b_vector'], titv, valid), axis=1)
     else:
-        df["compactor_p"] = df.parallel_apply(lambda x: get_pval.target_p(2 * len(x['base_S1']), x['stemL'], x['totaMut'], x['stemMut'], x['compMut']), axis=1)
+        df["compactor_p"] = df.parallel_apply(lambda x: get_pval.target_p(len(x['base_S1']) + len(x['base_S2']), x['stemL'], x['totaMut'], x['stemMut'], x['compMut']), axis=1)
 
     """ Step 5: Calculate anchor_score_per_split """
     df["anchor_score_per_split"] = df["compactor_weight"] * df["compactor_p"]
