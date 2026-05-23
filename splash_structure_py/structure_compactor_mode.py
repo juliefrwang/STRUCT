@@ -118,7 +118,12 @@ def SS_compactor(output_prefix, compactor_file, element_annotation,
         df['compMut'] = df['compMut_1'] + df['compMut_2']
 
     """ Step 4: Calculate structure target-p """
-    df["compactor_p"] = df.parallel_apply(lambda x: get_pval.target_p(2 * len(x['base_S1']), x['stemL'], x['totaMut'], x['stemMut'], x['compMut']), axis=1) 
+    if extended:
+        df["compactor_p"] = df.parallel_apply(lambda x: get_pval.target_p_ext(
+            len(x['base_S1']) + len(x['base_S2']), x['stemL'], x['totaMut'],
+            x['stemMut'], x['E'], x['b_vector'], titv, valid), axis=1)
+    else:
+        df["compactor_p"] = df.parallel_apply(lambda x: get_pval.target_p(2 * len(x['base_S1']), x['stemL'], x['totaMut'], x['stemMut'], x['compMut']), axis=1)
 
     """ Step 5: Calculate anchor_score_per_split """
     df["anchor_score_per_split"] = df["compactor_weight"] * df["compactor_p"]
@@ -126,7 +131,10 @@ def SS_compactor(output_prefix, compactor_file, element_annotation,
     df['anchor_split'] = df.apply(lambda x: x['anchor'] + '_' + x['segment_index'], axis=1)
 
     """ Step 6: Calculate anchor_p """
-    df = get_pval.wrap_anchor_p_compactor(df)
+    if extended:
+        df = get_pval.wrap_anchor_p_compactor_ext(df, titv=titv, valid=valid)
+    else:
+        df = get_pval.wrap_anchor_p_compactor(df)
 
     """ Step 7: BH correction on anchors with number of compactor > 2 """
     # Filter the DataFrame to keep rows with 'anchor_split' counts greater than 2

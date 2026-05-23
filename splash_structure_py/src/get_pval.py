@@ -487,3 +487,50 @@ def wrap_anchor_p_compactor(df):
     # We can now assign this back to your DataFrame, but you'll need to align the indices
     df = df.merge(p_val_results.rename('anchor_p'), left_on='anchor_split', right_index=True)
     return df
+
+
+def anchor_p_compactor_subdf_ext(sub_df, titv=0.5, valid=V_EXT):
+    """SVP analogue of ``anchor_p_compactor_subdf``.
+
+    Per ``IMPLEMENTATION_PLAN_nonwcf_compactor.md`` Phase C3. Uses the
+    aggregated b_vector (= b_vector_1 ⊕ b_vector_2 from the two
+    recombined halves) and the corrected virtual-target length
+    ``len(base_S1) + len(base_S2)``. All rows within an anchor_split
+    share the same base compactor, hence the same base_S1 / base_S2
+    lengths.
+    """
+    p_val = sub_df['anchor_score_per_split'].iloc[0]
+
+    if len(sub_df) > 1:
+        k = len(sub_df['base_S1'].iloc[0]) + len(sub_df['base_S2'].iloc[0])
+        all_anchor_outcomes, anchor_pmf = pmf_anchor_score(*prep_for_conv_ext(
+            len(sub_df),
+            list(sub_df['compactor_weight']),
+            k,
+            list(sub_df['stemL']),
+            list(sub_df['totaMut']),
+            list(sub_df['b_vector']),
+            titv,
+            valid,
+        ))
+
+        p_val = anchor_p(all_anchor_outcomes, anchor_pmf, p_val)
+
+    return p_val
+
+
+def wrap_anchor_p_compactor_ext(df, titv=0.5, valid=V_EXT):
+    """SVP analogue of ``wrap_anchor_p_compactor``.
+
+    Requires the input dataframe to carry a ``b_vector`` column (added
+    in Phase C2 by the per-half find_mutation_ext dispatch with
+    concatenation). ``titv`` and ``valid`` are bound into the per-group
+    callable via ``functools.partial`` so they travel through
+    pandarallel's serialisation unchanged.
+    """
+    grouped = df.groupby('anchor_split')
+    p_val_results = grouped.parallel_apply(
+        functools.partial(anchor_p_compactor_subdf_ext, titv=titv, valid=valid)
+    )
+    df = df.merge(p_val_results.rename('anchor_p'), left_on='anchor_split', right_index=True)
+    return df
