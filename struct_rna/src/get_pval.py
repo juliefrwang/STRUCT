@@ -6,7 +6,7 @@ import itertools
 import sys
 from pandarallel import pandarallel
 
-from splash_structure_py.src.non_wcf import pi_table, V_EXT
+from struct_rna.src.non_wcf import pi_table, V_EXT
 
 ### 1. Target p computation ###
 def target_p1_closed_form(k, v, L, c):

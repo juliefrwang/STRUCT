@@ -19,10 +19,10 @@ You can install STRUCT by cloning the repository and using pip to install the pa
 
 ```bash
 # Clone the repository
-git clone https://github.com/juliefrwang/splash-structure.git
+git clone https://github.com/juliefrwang/struct.git
 
 # Navigate to the project directory
-cd splash-structure
+cd struct
 
 # Install the package
 pip install .
@@ -63,7 +63,7 @@ __Positional Arguments__
 2. `<output_prefix>`: Prefix for naming the output result folder.
 
 ## Example runs on test data
-There are two files in `tests/test_data/`: `test.after_correction.scores.tsv`, a test SPLASH output file, and `test_compactor.tsv`, a test compactor file. To run STRUCT from `splash-structure` folder with an output folder prefix `new_test`:
+There are two files in `tests/test_data/`: `test.after_correction.scores.tsv`, a test SPLASH output file, and `test_compactor.tsv`, a test compactor file. To run STRUCT from `struct` folder with an output folder prefix `new_test`:
 ### Run target mode
 ```bash
 ss-target new_test tests/test_data/test.after_correction.scores.tsv

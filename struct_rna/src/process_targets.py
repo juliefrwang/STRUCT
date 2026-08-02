@@ -7,7 +7,7 @@ import pandas as pd
 import numpy as np
 from pandarallel import pandarallel
 
-from splash_structure_py.src.non_wcf import V_EXT, V_WCF
+from struct_rna.src.non_wcf import V_EXT, V_WCF
 
 
 def rc(seq):

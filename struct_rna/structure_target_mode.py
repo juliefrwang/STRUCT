@@ -13,12 +13,12 @@ import pandas as pd
 from statsmodels.stats.multitest import multipletests
 from pandarallel import pandarallel
 
-from splash_structure_py.src.parse_args import *
-from splash_structure_py.src.process_targets import *
-from splash_structure_py.src.non_wcf import build_valid_set
-import splash_structure_py.src.find_comp_mut as find_comp_mut
-import splash_structure_py.src.get_pval as get_pval
-import splash_structure_py.src.elem_annas as elem_annas
+from struct_rna.src.parse_args import *
+from struct_rna.src.process_targets import *
+from struct_rna.src.non_wcf import build_valid_set
+import struct_rna.src.find_comp_mut as find_comp_mut
+import struct_rna.src.get_pval as get_pval
+import struct_rna.src.elem_annas as elem_annas
 
 def SS_target(output_prefix, splash_output_file, element_annotation,
               wobble=False, titv=0.5, noncanon=None):

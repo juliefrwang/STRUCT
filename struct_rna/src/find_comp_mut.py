@@ -6,7 +6,7 @@ The script also provides three ways for strucutre notation.
 import numpy as np
 import pandas as pd
 
-from splash_structure_py.src.non_wcf import V_EXT  # default valid set
+from struct_rna.src.non_wcf import V_EXT  # default valid set
 
 
 def rc(seq):

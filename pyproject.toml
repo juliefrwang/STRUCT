@@ -3,12 +3,12 @@ requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "splash-structure"
+name = "struct-rna"
 version = "0.0.1"
 authors = [
   { name="Julie Fangran Wang", email="frwang@stanford.edu" },
 ]
-description = "SPLASH-structure is a statistical tool that predicts RNA secondary structure bypassing MSA."
+description = "STRUCT is a statistical tool that predicts RNA secondary structure bypassing MSA."
 readme = "README.md"
 requires-python = ">=3.9"
 classifiers = [
@@ -24,8 +24,8 @@ dependencies = [
 ]
 
 [project.scripts]
-ss-target = "splash_structure_py.structure_target_mode:run_SS_target"
-ss-compactor = "splash_structure_py.structure_compactor_mode:run_SS_compactor"
+ss-target = "struct_rna.structure_target_mode:run_SS_target"
+ss-compactor = "struct_rna.structure_compactor_mode:run_SS_compactor"
 
 [tool.setuptools.packages.find]
-include = ["splash_structure_py","splash_structure_py.src"]
+include = ["struct_rna","struct_rna.src"]
