@@ -1,10 +1,13 @@
 """
-This script is to find compensatory mutations in the target sequence, along with 
+This script is to find compensatory mutations in the target sequence, along with
 all parameters that are crucial for calculating structure p-value.
 The script also provides three ways for strucutre notation.
 """
 import numpy as np
 import pandas as pd
+
+from splash_structure_py.src.non_wcf import V_EXT  # default valid set
+
 
 def rc(seq):
     """
@@ -68,6 +71,139 @@ def find_mutation(base, target, stem_start_idx, stem_end_idx, rc_start_idx, rc_e
         struc = np.nan
 
     return (totaMut, stemMut, compMut, struc)
+
+
+def find_mutation_ext(base, target,
+                      stem_start_idx, stem_end_idx,
+                      rc_start_idx, rc_end_idx,
+                      valid=V_EXT):
+    """Extended version of ``find_mutation`` for the non-canonical
+    extension. Recognises pairs in the valid set ``valid`` = V(N) as
+    structure-supporting and counts both single-position-compatible
+    (SPC) and base-pair-covariation (BPC) events. Default
+    ``valid = V_EXT`` (V_WCF ∪ G·U) ⇒ byte-identical to the prior
+    G·U-only behaviour.
+
+    Parameters
+    ----------
+    base, target : str
+        Equal-length sequences (cDNA alphabet).
+    stem_start_idx, stem_end_idx : int
+        Inclusive indices of the left stem in ``base``.
+    rc_start_idx, rc_end_idx : int
+        Inclusive indices of the right stem.
+
+    Returns
+    -------
+    tuple
+        ``(totaMut, stemMut, E, struc, n_p_vector, b_vector)``
+
+        * ``totaMut`` — total Hamming distance v.
+        * ``stemMut`` — mismatches falling in stem positions s = sum(n_p).
+        * ``E`` — structure-supporting count: number of stem pairs that
+          are SPC or BPC under V_EXT in ``target``.
+        * ``struc`` — structure notation string. Conventions:
+          ``-`` = no mutation OR untouched side of an SPC event;
+          UPPERCASE = position is part of an SPC or BPC event
+          (structure-supporting); lowercase = mutated, structure-
+          disrupting, including positions outside the stem; braces
+          ``{ ( ) }`` mark the stem-loop boundaries.
+        * ``n_p_vector`` — list of length L with the per-pair mismatch
+          count n_p ∈ {0, 1, 2}.
+        * ``b_vector`` — list of length L with the base-target stem
+          composition (b_L^p, b_R^p) tuples.
+
+    Notes
+    -----
+    The original ``find_mutation`` is left untouched; this function is
+    introduced behind the Phase 4 ``--wobble`` CLI flag.
+
+    No-stem sentinel: compactor mode calls this function on each of the
+    two recombined halves, including halves where the stem-finder
+    returned ``(0, 0, 0, 0, 0)`` (no stem detected). In that case
+    ``stem_end_idx == stem_start_idx == 0`` and a naive
+    ``L = stem_end_idx - stem_start_idx + 1`` would equal 1, producing a
+    phantom pair and contaminating ``b_vector`` / ``n_p_vector``. We
+    short-circuit that case to return the outside-stem Hamming distance
+    with empty per-pair vectors, matching the ``struc = np.nan``
+    convention from the legacy ``find_mutation``.
+    """
+    if stem_end_idx == 0 and stem_start_idx == 0:
+        totaMut = sum(1 for i in range(len(base)) if base[i] != target[i])
+        return (totaMut, 0, 0, np.nan, [], [])
+
+    L = stem_end_idx - stem_start_idx + 1
+    struc = ['-'] * len(base)
+
+    n_p_vector = []
+    b_vector = []
+    E = 0
+    stemMut = 0
+
+    # Walk the stem pair-by-pair: pair p (0-indexed) uses left index
+    # stem_start_idx + p and right index rc_end_idx - p (reverse-
+    # complement pairing).
+    for p in range(L):
+        left_idx = stem_start_idx + p
+        right_idx = rc_end_idx - p
+
+        b_L_p = base[left_idx]
+        b_R_p = base[right_idx]
+        b_vector.append((b_L_p, b_R_p))
+
+        new_b_L = target[left_idx]
+        new_b_R = target[right_idx]
+
+        l_mut = new_b_L != b_L_p
+        r_mut = new_b_R != b_R_p
+        n_p = int(l_mut) + int(r_mut)
+        n_p_vector.append(n_p)
+        stemMut += n_p
+
+        if n_p > 0 and (new_b_L, new_b_R) in valid:
+            E_p = 1
+        else:
+            E_p = 0
+        E += E_p
+
+        if n_p == 1:
+            mut_idx = left_idx if l_mut else right_idx
+            mut_base = new_b_L if l_mut else new_b_R
+            struc[mut_idx] = mut_base if E_p else mut_base.lower()
+        elif n_p == 2:
+            if E_p:
+                struc[left_idx] = new_b_L
+                struc[right_idx] = new_b_R
+            else:
+                struc[left_idx] = new_b_L.lower()
+                struc[right_idx] = new_b_R.lower()
+        # n_p == 0: leave both '-'
+
+    # Mutations outside the stem.
+    totaMut = stemMut
+    for i in range(len(base)):
+        if base[i] != target[i]:
+            in_left_stem = stem_start_idx <= i <= stem_end_idx
+            in_right_stem = rc_start_idx <= i <= rc_end_idx
+            if not (in_left_stem or in_right_stem):
+                totaMut += 1
+                struc[i] = target[i].lower()
+
+    # Insert stem-boundary braces.
+    struc = (struc[:stem_start_idx] +
+             ['{'] + struc[stem_start_idx:stem_end_idx + 1] +
+             ['('] + struc[stem_end_idx + 1:rc_start_idx] + [')'] +
+             struc[rc_start_idx:rc_end_idx + 1] + ['}'] +
+             struc[rc_end_idx + 1:])
+    struc = "".join(struc)
+
+    # Match the original "no stem" patch (zero-length stem from compactor
+    # mode signals nothing to score).
+    if stem_end_idx == 0:
+        struc = np.nan
+
+    return (totaMut, stemMut, E, struc, n_p_vector, b_vector)
+
 
 def db_notation_from_idx(stem_start_idx, stem_end_idx, rc_start_idx, rc_end_idx, target_length):
     db_notation=''

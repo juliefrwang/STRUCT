@@ -1,11 +1,14 @@
 """
-This script is the first step of the pipeline. It takes in a dataframe with significant 
+This script is the first step of the pipeline. It takes in a dataframe with significant
 anchors from SPLASH and returns a dataframe that contains hairpin structure information
 and target weight information.
 """
 import pandas as pd
 import numpy as np
 from pandarallel import pandarallel
+
+from splash_structure_py.src.non_wcf import V_EXT, V_WCF
+
 
 def rc(seq):
     """
@@ -41,10 +44,95 @@ def find_stem_ind(target, stem_L=5):
             if loc > -1:
                 stem_start_idx = j
                 stem_end_idx = i + j-1
-                rc_start_idx = loc + i + j 
+                rc_start_idx = loc + i + j
                 rc_end_idx = loc + i + j + i-1
                 return stem_start_idx, stem_end_idx, rc_start_idx, rc_end_idx, stem_end_idx-stem_start_idx+1
     return [0,0,0,0,0]
+
+
+def find_stem_ind_wobble(target, stem_L=5, valid=V_EXT):
+    """Non-canonical-aware stem detection.
+
+    Searches for a stem-loop in ``target`` where each pair lies in the
+    valid set ``valid`` = V(N) = V_WCF ∪ N (default ``V_EXT`` = V_WCF ∪
+    G·U, preserving prior behaviour). Replaces the strict
+    reverse-complement substring match in ``find_stem_ind`` with a
+    position-by-position membership check.
+
+    Selection order:
+
+    1. Longest stem (length-greedy).
+    2. Fewest non-canonical positions (tiebreaker among same-length
+       stems; an all-WCF stem beats any N-using stem at the same length).
+    3. Leftmost left-stem start.
+    4. Leftmost right-stem start.
+
+    Non-canonical cap: candidates with more than ``floor(L / 2)`` pairs
+    drawn from ``N`` (= ``valid`` minus the WCF pairs), counted in
+    aggregate over all non-canonical types, are rejected (decision D2).
+    Bounds sequence-chance non-canonical-pile stems while allowing
+    genuine extensions (e.g., G·U in HIV TAR's lower stem). If every
+    candidate of length >= ``stem_L`` violates the cap, the no-stem
+    sentinel is returned.
+
+    Returns
+    -------
+    list or tuple
+        ``(stem_start_idx, stem_end_idx, rc_start_idx, rc_end_idx, stemL)``
+        if a stem of length >= ``stem_L`` and ``n_nc <= L // 2`` is
+        found, else ``[0, 0, 0, 0, 0]``. Index conventions match
+        ``find_stem_ind``.
+
+    Notes
+    -----
+    With the default ``valid = V_EXT`` this is byte-identical to the
+    prior G·U wobble finder (N = {G·U, U·G}, so ``n_nc`` counts exactly
+    the wobble pairs). Backward compatibility with the strict-WCF finder
+    holds only when no longer cap-satisfying N-using stem exists.
+    """
+    n = len(target)
+    max_size = n // 2
+    if max_size < stem_L:
+        return [0, 0, 0, 0, 0]
+
+    best = None  # (-length, n_nc, left_start, right_start, length)
+
+    for i in range(stem_L, max_size + 1):
+        # i = candidate stem length. Aggregate non-canonical cap.
+        nc_cap = i // 2
+        for j in range(n - 2 * i + 1):
+            # j = left stem start
+            for k in range(j + i, n - i + 1):
+                # k = right stem start; pair p uses left j+p, right k+(i-1-p)
+                n_nc = 0
+                ok = True
+                for p in range(i):
+                    bL = target[j + p]
+                    bR = target[k + (i - 1 - p)]
+                    pair = (bL, bR)
+                    if pair not in valid:
+                        ok = False
+                        break
+                    if pair not in V_WCF:
+                        # pair ∈ valid and ∉ V_WCF ⇒ a non-canonical (N) pair
+                        n_nc += 1
+                        if n_nc > nc_cap:
+                            ok = False
+                            break
+                if ok:
+                    candidate = (-i, n_nc, j, k, i)
+                    if best is None or candidate < best:
+                        best = candidate
+
+    if best is None:
+        return [0, 0, 0, 0, 0]
+
+    neg_i, n_nc, j, k, i = best
+    stem_start_idx = j
+    stem_end_idx = j + i - 1
+    rc_start_idx = k
+    rc_end_idx = k + i - 1
+    return stem_start_idx, stem_end_idx, rc_start_idx, rc_end_idx, i
 
 
 def process_row(row):
@@ -89,17 +177,31 @@ def process_row(row):
                            "target_wgt": np.array(cnt_list)/(sum(cnt_list) + row["cnt_most_freq_target_1"])})
     return new_df
 
-def process_df(df, wgt_thres=0.05, stemL=5):
+def process_df(df, wgt_thres=0.05, stemL=5, wobble=False, valid=V_EXT):
     """
     This function takes in a dataframe with significant anchors from SPLASH
     and returns a dataframe that hairpin structure is found in the base target.
-    Additionally, targets with weight w.r.t total occurences (M) < 0.05 are 
+    Additionally, targets with weight w.r.t total occurences (M) < 0.05 are
     dropped and the weight is recalculated. Both filtered and unfiltered target
-    weights are returned. 
+    weights are returned.
+
+    Parameters
+    ----------
+    wobble : bool
+        When True, use the non-canonical-aware stem finder
+        ``find_stem_ind_wobble``; otherwise the strict-WCF
+        ``find_stem_ind`` (default).
+    valid : frozenset
+        The valid pair set V(N) used by the non-canonical-aware finder.
+        Default ``V_EXT`` (V_WCF ∪ G·U) ⇒ byte-identical to the prior
+        wobble path. Ignored when ``wobble`` is False.
     """
 
     # find stems and store the index (both included)
-    df[["stem_start_idx", "stem_end_idx", "rc_start_idx", "rc_end_idx", "stemL"]] = pd.DataFrame(df.parallel_apply(lambda x: find_stem_ind(x.most_freq_target_1, 5), axis=1).tolist())
+    if wobble:
+        df[["stem_start_idx", "stem_end_idx", "rc_start_idx", "rc_end_idx", "stemL"]] = pd.DataFrame(df.parallel_apply(lambda x: find_stem_ind_wobble(x.most_freq_target_1, stemL, valid), axis=1).tolist())
+    else:
+        df[["stem_start_idx", "stem_end_idx", "rc_start_idx", "rc_end_idx", "stemL"]] = pd.DataFrame(df.parallel_apply(lambda x: find_stem_ind(x.most_freq_target_1, stemL), axis=1).tolist())
 
     # drop anchors without stem using condition stem_start_idx == stem_end_idx
     df = df[df.stemL != 0]
